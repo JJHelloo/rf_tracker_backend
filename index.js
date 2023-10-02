@@ -33,12 +33,8 @@ async function checkUserCredentials(username, password) {
   const sql = `SELECT * FROM androidappusers WHERE Username = ?`;
   const data = await executeSQL(sql, [username]);
 
-  // console.log("Data:", data);  // Debugging line
-  // console.log("Password:", password); // Debugging line
-
   if (data.length > 0) {
     const passwordHash = data[0].Password;
-    // console.log("Password Hash:", passwordHash); // Debugging line
     if(password && passwordHash) {
         return await bcrypt.compare(password, passwordHash);
     } else {
@@ -52,30 +48,39 @@ async function checkUserCredentials(username, password) {
 
   
 // Handle login for users
-// Handle login for users
 app.post("/login", async (req, res) => {
   try {
-    const { username, password, MACAddress, SerialNumber } = req.body; // Get MACAddress and SerialNumber
+    const { username, password, SerialNumber } = req.body; // Get SerialNumber
     console.log(req.body);
     if (await checkUserCredentials(username, password)) {
       const token = jwt.sign(
-        { username },
+        { username, SerialNumber },
         process.env.JWT_SECRET,
         { expiresIn: '1h' }
       ); 
 
-      // First, find the DeviceID based on the MACAddress and SerialNumber
-      const sqlFindDevice = `SELECT DeviceID FROM RFDevices WHERE MACAddress = ? AND SerialNumber = ?`;
-      const deviceData = await executeSQL(sqlFindDevice, [MACAddress, SerialNumber]);
+      // First, find the DeviceID based on the SerialNumber
+      const sqlFindDevice = `SELECT DeviceID FROM RFDevices WHERE SerialNumber = ?`;
+      const deviceData = await executeSQL(sqlFindDevice, [SerialNumber]);
 
-      if (deviceData.length > 0) {
+      // Find the RFUserID based on the username
+      const sqlFindUser = `SELECT RFUserID FROM AndroidAppUsers WHERE Username = ?`;
+      const userData = await executeSQL(sqlFindUser, [username]);
+
+      if (deviceData.length > 0 && userData.length > 0) {
         const deviceID = deviceData[0].DeviceID;
+        const userID = userData[0].RFUserID;
 
         // Update the CurrentDeviceID in the AndroidAppUsers table
         const sqlUpdateDevice = `UPDATE AndroidAppUsers SET CurrentDeviceID = ? WHERE Username = ?`;
         await executeSQL(sqlUpdateDevice, [deviceID, username]);
+
+        // Update the LastUser in the RFDevices table
+        const sqlUpdateLastUser = `UPDATE RFDevices SET LastUser = ? WHERE DeviceID = ?`;
+        await executeSQL(sqlUpdateLastUser, [userID, deviceID]);
       } else {
-        // You might want to handle the case where the device is not found in your database
+        // Handle the case where the device or user is not found in your database
+        console.log("Device or user not found in the database.");
       }
 
       res.send({
@@ -93,34 +98,66 @@ app.post("/login", async (req, res) => {
 });
 
 
+
+// set user to the device they are using
+app.post('/api/associateUserWithDevice', async (req, res) => {
+  try {
+      const { username, serialNumber } = req.body;
+      
+      if (!username || !serialNumber) {
+          return res.status(400).send({ error: "Missing required fields" });
+      }
+
+      // SQL query to update AndroidAppUsers table with the DeviceID
+      const sqlAssociateUser = "UPDATE AndroidAppUsers SET CurrentDeviceID = (SELECT DeviceID FROM RFDevices OR SerialNumber = ?) WHERE Username = ?";
+      
+      // Execute the SQL query
+      await executeSQL(sqlAssociateUser, [serialNumber, username]);
+
+      // console.log(`Associated user ${username} with device ${serialNumber}`);
+      
+      res.status(200).send({ message: 'Successfully associated user with device' });
+
+  } catch (err) {
+      console.error(err);
+      res.status(500).send({ error: "An error occurred while processing your request." });
+  }
+});
+
+
 // Endpoint to receive location data
 app.post('/api/location', async (req, res) => {
   try {
-    console.log(req.body);
-    const { latitude, longitude, username } = req.body;
-    // console.log(username);
-    if (!latitude || !longitude || !username) {
-      return res.status(400).send({ error: "Missing required fields" });
+    const { latitude, longitude } = req.body;
+    const token = req.headers['authorization'].split(' ')[1];
+
+    if (!latitude || !longitude || !token) {
+      return res.status(400).send({ error: "Missing required fields or token" });
     }
 
-    // Assuming you have a way to get deviceID based on username, MAC address, or another identifier
-    // For example, you could run a SQL query to get it
-    // const deviceID = /* SQL query or other method to get device ID based on username or another identifier */;
+    jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        return res.status(401).send({ error: "Invalid token" });
+      }
 
-    // SQL queries to update device information in the database
-    const sqlUpdateRFDevice = "UPDATE RFDevices SET CurrentLocation = ? WHERE DeviceID = ?";
-    const sqlInsertDeviceHistory = "INSERT INTO DeviceHistory (DeviceID, Location) VALUES (?, ?)";
-    
-    // Execute the SQL queries
-    await executeSQL(sqlUpdateRFDevice, [`${latitude}, ${longitude}`, deviceID]);
-    await executeSQL(sqlInsertDeviceHistory, [deviceID, `${latitude}, ${longitude}`]);
+      const deviceID = await getDeviceIdFromToken(token);
 
-    console.log(`Received location: ${latitude}, ${longitude} from ${username}`);
+      if (deviceID === null) {
+        return res.status(400).send({ error: "Device ID not found" });
+      }
 
-    res.status(200).json({
-      message: 'Location data received',
-      latitude: latitude,
-      longitude: longitude
+      const sqlUpdateRFDevice = "UPDATE RFDevices SET CurrentLocation = ? WHERE DeviceID = ?";
+      const sqlInsertDeviceHistory = "INSERT INTO DeviceHistory (DeviceID, Location) VALUES (?, ?)";
+
+      await executeSQL(sqlUpdateRFDevice, [`${latitude}, ${longitude}`, deviceID]);
+      await executeSQL(sqlInsertDeviceHistory, [deviceID, `${latitude}, ${longitude}`]);
+
+
+      res.status(200).json({
+        message: 'Location data received',
+        latitude: latitude,
+        longitude: longitude
+      });
     });
   } catch (err) {
     console.error(err);
@@ -129,9 +166,10 @@ app.post('/api/location', async (req, res) => {
 });
 
 
+
+
 // Store device info
 app.post('/api/store_device', async (req, res) => {
-  console.log("device activated");
   const { MACAddress, SerialNumber, Model, CurrentLocation, LastUser, GeofenceBoundaryID } = req.body;
   const sql = "INSERT INTO RFDevices (MACAddress, SerialNumber, Model, CurrentLocation, LastUser, GeofenceBoundaryID) VALUES (?, ?, ?, ?, ?, ?)";
   try {
@@ -145,7 +183,6 @@ app.post('/api/store_device', async (req, res) => {
 
 // Store user info web interface
 app.post('/api/store_user', async (req, res) => {
-  console.log("user activated");
 
   const { FirstName, LastName, CurrentDeviceID } = req.body;
   const sql = "INSERT INTO androidappusers (FirstName, LastName, CurrentDeviceID) VALUES (?, ?, ?)";
@@ -172,6 +209,23 @@ app.post('/api/store_boundary', async (req, res) => {
 
 
 
+async function getDeviceIdFromToken(token) {
+  // Decode the token to get the payload
+  const decoded = jwt.decode(token);
+
+  // Assume the decoded token contains a SerialNumber
+  const serialNumber = decoded.SerialNumber;
+
+  // Query the database to get the DeviceID associated with this SerialNumber
+  const sql = "SELECT DeviceID FROM RFDevices WHERE SerialNumber = ?";
+  const result = await executeSQL(sql, [serialNumber]);
+
+  if (result && result.length > 0) {
+    return result[0].DeviceID;
+  } else {
+    return null;
+  }
+}
 
 
 // check user auth or not
