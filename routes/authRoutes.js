@@ -1,8 +1,7 @@
 const express = require('express');
-const mysql = require("mysql");
-const authController = require('../controllers/authControllers');
-const app = express();
+const router = express.Router();
+const authController = require('../controllers/authController');
 
-app.post('/api/login', authControllers.login_post);
+router.post('/login', authController.login);
 
-module.exports = app;
+module.exports = router;
