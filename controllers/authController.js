@@ -2,11 +2,11 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const executeSQL = require('../middleware/executeSQL');
-const { checkUserCredentials, getDeviceIdFromToken } = require('../utils/utils');
+const { checkUserCredentials, getDeviceIdFromToken, checkWebUserCredentials } = require('../utils/utils');
 
 
-// Handle login for app users
-exports.login = async (req, res) => {
+// Handle login for the app users
+exports.appLogin = async (req, res) => {
   console.log("log in activated");
     try {
       const { username, password, SerialNumber } = req.body; // Get SerialNumber
@@ -55,3 +55,33 @@ exports.login = async (req, res) => {
       res.status(500).send({ error: "An error occurred while processing your request." });
     }
   };
+
+  exports.webLogin = async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      const userCredentials = await checkWebUserCredentials(username, password);
+  
+      if (userCredentials.isValid) {
+        const token = jwt.sign(
+          { username, isAdmin: userCredentials.isAdmin }, // Include isAdmin flag in the token
+          process.env.JWT_SECRET,
+          { expiresIn: '1s' }
+        );
+  
+        // No need for additional logic here, as the isAdmin flag is included in the token
+        res.send({
+          authenticated: true,
+          username: username,
+          isAdmin: userCredentials.isAdmin, // Optionally include isAdmin in the response
+          token: token
+        });
+      } else {
+        res.send({ error: "Invalid username or password" });
+      }
+    } catch (err) {
+      console.error(err);
+      res.status(500).send({ error: "An error occurred while processing your request." });
+    }
+  };
+  
+  
