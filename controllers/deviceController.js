@@ -52,7 +52,7 @@ exports.getDevices = async (req, res) => {
 exports.location = async (req, res) => {
     try {
       const { latitude, longitude } = req.body;
-      // console.log(req.body);
+      console.log(req.body);
       const token = req.headers['authorization'].split(' ')[1];
   
       if (!latitude || !longitude || !token) {

@@ -40,6 +40,20 @@ async function checkUserCredentials(username, password) {
     console.log("User not found.");
     return false;
   }
+  async function checkWebUserCredentials(username, password) {
+    const sql = `SELECT * FROM webpageusers WHERE Username = ?`;
+    const data = await executeSQL(sql, [username]);
   
-  module.exports = { checkUserCredentials, getDeviceIdFromToken };
+    if (data.length > 0) {
+      const passwordHash = data[0].Password;
+      const isAdmin = data[0].IsAdmin;  // Retrieve the IsAdmin flag from the database record
+      const isValid = password && passwordHash ? await bcrypt.compare(password, passwordHash) : false;
+  
+      // Return both the validity of the login and the admin status
+      return { isValid, isAdmin };
+    }
+    return { isValid: false, isAdmin: false };
+  }
+  
+  module.exports = { checkUserCredentials, getDeviceIdFromToken, checkWebUserCredentials };
   
