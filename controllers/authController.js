@@ -65,7 +65,7 @@ exports.appLogin = async (req, res) => {
         const token = jwt.sign(
           { username, isAdmin: userCredentials.isAdmin }, // Include isAdmin flag in the token
           process.env.JWT_SECRET,
-          { expiresIn: '1s' }
+          { expiresIn: '1h' }
         );
   
         // No need for additional logic here, as the isAdmin flag is included in the token
@@ -83,5 +83,3 @@ exports.appLogin = async (req, res) => {
       res.status(500).send({ error: "An error occurred while processing your request." });
     }
   };
-  
-  

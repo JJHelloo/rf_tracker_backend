@@ -1,4 +1,5 @@
 const executeSQL = require('../middleware/executeSQL');
+const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const saltRounds = 10;
 
@@ -14,9 +15,17 @@ exports.storeUser = async (req, res) => {
       res.status(500).json({ error: err.message });
     }
   };
-
-
   exports.addWebUser = async (req, res) => {
+    // Extract the token from the Authorization header
+    const token = req.headers["authorization"].split(" ")[1];
+    
+    // Decode the token to get the payload
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check if the user is an admin
+    if (!decoded.isAdmin) {
+      return res.status(403).send({ message: "Permission denied" });
+    }
     try {
       const { username, password, email, isAdmin } = req.body;
   
@@ -43,9 +52,18 @@ exports.storeUser = async (req, res) => {
   
   
   exports.addAppUser = async (req, res) => {
+
+    const token = req.headers["authorization"].split(" ")[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Check if user is an admin
+    if (!decoded.isAdmin) {
+      return res.status(403).json({ message: "Permission denied" });
+    }
+
     try {
       const { firstName, lastName, username, password } = req.body;
-  
+
       // Check if username already exists
       const checkQuery = 'SELECT * FROM AndroidAppUsers WHERE Username = ?';
       const existingUsers = await executeSQL(checkQuery, [username]);

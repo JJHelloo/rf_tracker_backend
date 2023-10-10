@@ -41,11 +41,22 @@ exports.associateUserWithDevice = async (req, res) => {
   };
   
 
-// Fetch all RFDevices
+// Fetch all RFDevices along with Site Information
 exports.getDevices = async (req, res) => {
-    const devices = await executeSQL("SELECT * FROM RFDevices");
-    res.json(devices);
-  };
+  const sqlQuery = `
+  SELECT 
+      RFDevices.*, 
+      Sites.SiteName 
+  FROM 
+      RFDevices
+  LEFT JOIN 
+      Sites 
+  ON 
+      RFDevices.SiteID = Sites.SiteID
+  `;
+  const devices = await executeSQL(sqlQuery);
+  res.json(devices);
+};
 
 
 // Endpoint to receive location data
@@ -119,4 +130,8 @@ exports.getDeviceLocation = async (req, res) => {
       console.error(err);
       res.status(500).send({ error: "An error occurred while processing your request." });
     }
+  };
+
+  exports.addDevice = async (req, res) => { 
+
   };
